@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>マグネットカウンター</title>
+  <style>
+    #canvasOutput {
+      border: 1px solid black;
+      max-width: 100%;
+    }
+    .controls {
+      margin: 10px 0;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .loading {
+      display: none;
+      margin-left: 10px;
+    }
+    .result-container {
+      font-weight: bold;
+      font-size: 1.2em;
+      margin: 10px 0;
+    }
+    .color-count {
+      display: inline-block;
+      margin-right: 15px;
+    }
+    .red { color: #d00; }
+    .blue { color: #00d; }
+  </style>
+</head>
+<body>
+  <h1>赤と青の丸いマグネットを数える</h1>
+  <div class="controls">
+    <input type="file" id="fileInput" accept="image/*">
+    <button id="countBtn" disabled>マグネットを数える</button>
+    <span id="loading" class="loading">処理中...</span>
+  </div>
+  <div>
+    <canvas id="canvasOutput"></canvas>
+  </div>
+  <div id="result" class="result-container"></div>
+
+  <script async src="https://docs.opencv.org/3.4.1/opencv.js" onload="onOpenCvReady()" onerror="onOpenCvError()"></script>
+
+  <script>
+    // グローバル変数
+    let src = null;
+    const elements = {
+      canvas: document.getElementById('canvasOutput'),
+      fileInput: document.getElementById('fileInput'),
+      countBtn: document.getElementById('countBtn'),
+      result: document.getElementById('result'),
+      loading: document.getElementById('loading')
+    };
+    const ctx = elements.canvas.getContext('2d');
+
+    // OpenCV初期化関連
+    function onOpenCvReady() {
+      console.log("OpenCV.js 準備完了");
+      elements.fileInput.disabled = false;
+    }
+
+    function onOpenCvError() {
+      console.error("OpenCV.jsの読み込みに失敗しました");
+      elements.result.textContent = "エラー: OpenCVライブラリの読み込みに失敗しました。ページを再読み込みしてください。";
+    }
+
+    // ファイル選択時の処理
+    elements.fileInput.addEventListener('change', function(e) {
+      if (e.target.files.length === 0) return;
+
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        const imgElement = new Image();
+        imgElement.onload = function() {
+          // キャンバスサイズ設定
+          elements.canvas.width = imgElement.width;
+          elements.canvas.height = imgElement.height;
+          ctx.drawImage(imgElement, 0, 0);
+
+          try {
+            if (src) src.delete(); // 以前の画像を解放
+            src = cv.imread(elements.canvas);
+            elements.countBtn.disabled = false;
+            elements.result.textContent = "画像の読み込みが完了しました。「マグネットを数える」ボタンをクリックしてください。";
+          } catch (e) {
+            console.error("画像処理エラー:", e);
+            elements.result.textContent = "エラー: 画像の読み込みに失敗しました。";
+          }
+        };
+        imgElement.src = ev.target.result;
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    });
+
+    // マグネット検出処理
+    elements.countBtn.addEventListener('click', async function() {
+      if (!src) return;
+
+      // 処理中表示
+      elements.loading.style.display = 'inline';
+      elements.countBtn.disabled = true;
+      elements.result.textContent = "処理中...";
+
+      // 非同期処理で UI がブロックされないようにする
+      setTimeout(() => {
+        try {
+          const counts = detectMagnets(src);
+          elements.result.innerHTML = `
+            <div class="color-count red">赤いマグネット: ${counts.red}個</div>
+            <div class="color-count blue">青いマグネット: ${counts.blue}個</div>
+          `;
+        } catch (e) {
+          console.error("検出エラー:", e);
+          elements.result.textContent = "エラー: マグネットの検出に失敗しました。";
+        } finally {
+          elements.loading.style.display = 'none';
+          elements.countBtn.disabled = false;
+        }
+      }, 100);
+    });
+
+    // マグネット検出のメイン処理
+    function detectMagnets(src) {
+      const mats = {}; // 途中で生成するOpenCVオブジェクトを管理
+
+      try {
+        // 画像処理の準備
+        mats.dst = new cv.Mat();
+        cv.cvtColor(src, mats.dst, cv.COLOR_RGBA2RGB, 0);
+        mats.hsv = new cv.Mat();
+        cv.cvtColor(mats.dst, mats.hsv, cv.COLOR_RGB2HSV, 0);
+
+        // 赤色マグネットの検出（HSV色空間では色相が0付近と180付近に分かれる）
+        mats.redMask1 = new cv.Mat();
+        mats.redMask2 = new cv.Mat();
+        mats.lowerRed1 = new cv.Mat(mats.dst.rows, mats.dst.cols, mats.dst.type(), [0, 50, 50, 0]);
+        mats.upperRed1 = new cv.Mat(mats.dst.rows, mats.dst.cols, mats.dst.type(), [10, 255, 255, 255]);
+        mats.lowerRed2 = new cv.Mat(mats.dst.rows, mats.dst.cols, mats.dst.type(), [170, 50, 50, 0]);
+        mats.upperRed2 = new cv.Mat(mats.dst.rows, mats.dst.cols, mats.dst.type(), [180, 255, 255, 255]);
+
+        cv.inRange(mats.hsv, mats.lowerRed1, mats.upperRed1, mats.redMask1);
+        cv.inRange(mats.hsv, mats.lowerRed2, mats.upperRed2, mats.redMask2);
+        cv.add(mats.redMask1, mats.redMask2, mats.redMask1);
+
+        // 青色マグネットの検出
+        mats.blueMask = new cv.Mat();
+        mats.lowerBlue = new cv.Mat(mats.dst.rows, mats.dst.cols, mats.dst.type(), [90, 100, 50, 0]);
+        mats.upperBlue = new cv.Mat(mats.dst.rows, mats.dst.cols, mats.dst.type(), [150, 255, 255, 255]);
+        cv.inRange(mats.hsv, mats.lowerBlue, mats.upperBlue, mats.blueMask);
+
+        // 輪郭検出とカウント
+        const redCount = countCircles(mats.redMask1, [255, 0, 0, 255], mats.dst);
+        const blueCount = countCircles(mats.blueMask, [0, 0, 255, 255], mats.dst);
+
+        // 結果を表示
+        cv.imshow('canvasOutput', mats.dst);
+
+        return { red: redCount, blue: blueCount };
+      } finally {
+        // メモリ解放（生成したすべてのMatオブジェクトを削除）
+        Object.values(mats).forEach(mat => {
+          if (mat && !mat.isDeleted()) mat.delete();
+        });
+      }
+    }
+
+    // 円の検出とカウント
+    function countCircles(mask, color, dstImg) {
+      const tempMats = {};
+      try {
+        // ノイズ除去とモルフォロジー変換
+        tempMats.kernel = cv.Mat.ones(5, 5, cv.CV_8U);
+        tempMats.cleanMask = new cv.Mat();
+        cv.morphologyEx(mask, tempMats.cleanMask, cv.MORPH_OPEN, tempMats.kernel);
+        cv.GaussianBlur(tempMats.cleanMask, tempMats.cleanMask, new cv.Size(9, 9), 2, 2);
+
+        // 輪郭検出
+        tempMats.contours = new cv.MatVector();
+        tempMats.hierarchy = new cv.Mat();
+        cv.findContours(tempMats.cleanMask, tempMats.contours, tempMats.hierarchy,
+                         cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        let count = 0;
+        const minArea = 500;  // 最小面積（ノイズ除去用）
+        const minRadius = 20; // 最小半径
+        const maxRadius = 100; // 最大半径
+
+        for (let i = 0; i < tempMats.contours.size(); ++i) {
+          const cnt = tempMats.contours.get(i);
+          const area = cv.contourArea(cnt);
+
+          if (area >= minArea) {
+            const circle = cv.minEnclosingCircle(cnt);
+            const radius = circle.radius;
+
+            if (radius > minRadius && radius < maxRadius) {
+              count++;
+              // 円を描画
+              cv.circle(dstImg, circle.center, radius, color, 3);
+              // 番号を描画
+              const fontFace = cv.FONT_HERSHEY_SIMPLEX;
+              const fontScale = radius / 30;
+              const thickness = 2;
+              cv.putText(dstImg, count.toString(), new cv.Point(circle.center.x - 10, circle.center.y + 10),
+                        fontFace, fontScale, color, thickness);
+            }
+          }
+          cnt.delete();
+        }
+
+        return count;
+      } finally {
+        // メモリ解放
+        Object.values(tempMats).forEach(mat => {
+          if (mat && !mat.isDeleted()) mat.delete();
+        });
+      }
+    }
+  </script>
+</body>
+</html>
