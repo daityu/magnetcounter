@@ -85,7 +85,8 @@
             if (src) src.delete(); // 以前の画像を解放
             src = cv.imread(elements.canvas);
             elements.countBtn.disabled = false;
-            elements.result.textContent = "画像の読み込みが完了しました。「マグネットを数える」ボタンをクリックしてください。";
+            // 画像サイズ情報を表示
+            elements.result.textContent = `画像のサイズ ${imgElement.width} × ${imgElement.height} ピクセル。「マグネットを数える」ボタンをクリックしてください。`;
           } catch (e) {
             console.error("画像処理エラー:", e);
             elements.result.textContent = "エラー: 画像の読み込みに失敗しました。";
@@ -172,7 +173,7 @@
     function countCircles(mask, color, dstImg) {
       const tempMats = {};
       try {
-        // ノイズ除去とモルフォロジー変換
+        // ノイズ除去とモルフォロジzー変換
         tempMats.kernel = cv.Mat.ones(5, 5, cv.CV_8U);
         tempMats.cleanMask = new cv.Mat();
         cv.morphologyEx(mask, tempMats.cleanMask, cv.MORPH_OPEN, tempMats.kernel);
@@ -186,8 +187,8 @@
 
         let count = 0;
         const minArea = 500;  // 最小面積（ノイズ除去用）
-        const minRadius = dstImg.cols / 172; // 最小半径を画像の横幅の1/172に
-        const maxRadius = minRadius * 2; // 最大半径を最小半径の2倍
+        const minRadius = dstImg.cols / 130; // 最小半径を画像の横幅の1/130に
+        const maxRadius = minRadius * 1.6; // 最大半径を最小半径の1.6倍
 
         for (let i = 0; i < tempMats.contours.size(); ++i) {
           const cnt = tempMats.contours.get(i);
