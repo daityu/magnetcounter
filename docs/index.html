@@ -186,8 +186,8 @@
 
         let count = 0;
         const minArea = 500;  // 最小面積（ノイズ除去用）
-        const minRadius = 20; // 最小半径
-        const maxRadius = 100; // 最大半径
+        const minRadius = dstImg.cols / 172; // 最小半径を画像の横幅の1/172に
+        const maxRadius = minRadius * 2; // 最大半径を最小半径の2倍
 
         for (let i = 0; i < tempMats.contours.size(); ++i) {
           const cnt = tempMats.contours.get(i);
@@ -201,12 +201,13 @@
               count++;
               // 円を描画
               cv.circle(dstImg, circle.center, radius, color, 3);
-              // 番号を描画
+              // 番号を白色で描画
               const fontFace = cv.FONT_HERSHEY_SIMPLEX;
               const fontScale = radius / 30;
               const thickness = 2;
+              const white = [255, 255, 255, 255];
               cv.putText(dstImg, count.toString(), new cv.Point(circle.center.x - 10, circle.center.y + 10),
-                        fontFace, fontScale, color, thickness);
+                        fontFace, fontScale, white, thickness);
             }
           }
           cnt.delete();
