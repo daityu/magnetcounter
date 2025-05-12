@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8">
     <title>書類抽出と補正</title>
-    <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+    <script async src="https://docs.opencv.org/3.4.20/opencv.js"></script>
     <style>
         #canvasOutput {
             border: 1px solid black;
@@ -13,12 +13,22 @@
 </head>
 
 <body>
-    <input type="file" id="fileInput">
+    <input type="file" id="fileInput" disabled>
     <br>
     <canvas id="canvasInput"></canvas>
     <canvas id="canvasOutput"></canvas>
 
     <script>
+        // OpenCV.jsの読み込み完了を待つ
+        function onOpenCvReady() {
+            document.getElementById('fileInput').disabled = false;
+        }
+        if (typeof cv === 'undefined') {
+            document.getElementById('fileInput').disabled = true;
+            // OpenCV.jsのonloadでonOpenCvReadyを呼ぶ
+            document.querySelector('script[src*="opencv.js"]').onload = onOpenCvReady;
+        }
+
         // ファイル選択時
         document.getElementById('fileInput').addEventListener('change', function (e) {
             let file = e.target.files[0];
@@ -66,9 +76,15 @@
                     let area = cv.contourArea(cnt);
                     if (area > maxArea) {
                         maxArea = area;
+                        if (maxContour) maxContour.delete();
                         maxContour = approx;
+                    } else {
+                        approx.delete();
                     }
+                } else {
+                    approx.delete();
                 }
+                cnt.delete();
             }
 
             // 書類（四隅）が見つかった場合
@@ -126,6 +142,7 @@
             } else {
                 alert('書類が認識できませんでした');
                 src.delete(); dst.delete(); contours.delete(); hierarchy.delete();
+                if (maxContour) maxContour.delete();
             }
         }
     </script>
