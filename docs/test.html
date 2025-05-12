@@ -73,7 +73,7 @@
 
             // 書類（四隅）が見つかった場合
             if (maxContour && maxContour.rows == 4) {
-                // 順序を整えて4隅をリスト化
+                // 4点を配列に
                 let pts = [];
                 for (let i = 0; i < 4; i++) {
                     pts.push({
@@ -81,16 +81,15 @@
                         y: maxContour.intAt(i, 1)
                     });
                 }
-                // 左上/右上/右下/左下 に並び替える
-                pts.sort((a, b) => a.x + a.y - (b.x + b.y)); // 左上（最小）
-                let leftTop = pts[0];
-                let rightBottom = pts[3];
-                pts.sort((a, b) => a.x - b.x);
-                let leftBottom = pts[1];
-                let rightTop = pts[2];
-
-                // 4隅の順序を整える(左上、右上、右下、左下)
-                let ordered = [leftTop, rightTop, rightBottom, leftBottom];
+                // 左上: x+yが最小, 右下: x+yが最大
+                // 右上: x-yが最小, 左下: x-yが最大
+                let sum = pts.map(p => p.x + p.y);
+                let diff = pts.map(p => p.x - p.y);
+                let ordered = [];
+                ordered[0] = pts[sum.indexOf(Math.min(...sum))]; // 左上
+                ordered[2] = pts[sum.indexOf(Math.max(...sum))]; // 右下
+                ordered[1] = pts[diff.indexOf(Math.min(...diff))]; // 右上
+                ordered[3] = pts[diff.indexOf(Math.max(...diff))]; // 左下
 
                 // 目標のサイズを決定
                 let widthA = Math.hypot(ordered[2].x - ordered[3].x, ordered[2].y - ordered[3].y);
@@ -115,7 +114,7 @@
                 ]);
                 let M = cv.getPerspectiveTransform(srcTri, dstTri);
                 let warped = new cv.Mat();
-                cv.warpPerspective(src, warped, M, new cv.Size(maxWidth, maxHeight));
+                cv.warpPerspective(src, warped, M, new cv.Size(Math.round(maxWidth), Math.round(maxHeight)));
 
                 // 結果を表示
                 cv.imshow('canvasOutput', warped);
