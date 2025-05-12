@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>書類抽出と補正</title>
+    <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+    <style>
+        #canvasOutput {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+
+<body>
+    <input type="file" id="fileInput">
+    <br>
+    <canvas id="canvasInput"></canvas>
+    <canvas id="canvasOutput"></canvas>
+
+    <script>
+        // ファイル選択時
+        document.getElementById('fileInput').addEventListener('change', function (e) {
+            let file = e.target.files[0];
+            let img = new Image();
+            img.onload = function () {
+                let canvas = document.getElementById('canvasInput');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                let ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+
+                // OpenCVで処理
+                process();
+            };
+            img.src = URL.createObjectURL(file);
+        });
+
+        function process() {
+            let src = cv.imread('canvasInput');
+            let dst = new cv.Mat();
+
+            // グレースケール変換
+            cv.cvtColor(src, dst, cv.COLOR_RGBA2GRAY);
+
+            // ノイズ除去
+            cv.GaussianBlur(dst, dst, new cv.Size(5, 5), 0);
+
+            // エッジ検出
+            cv.Canny(dst, dst, 75, 200);
+
+            // 輪郭抽出
+            let contours = new cv.MatVector();
+            let hierarchy = new cv.Mat();
+            cv.findContours(dst, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+            // 最大面積の四角形輪郭を探す
+            let maxArea = 0;
+            let maxContour = null;
+            for (let i = 0; i < contours.size(); ++i) {
+                let cnt = contours.get(i);
+                let peri = cv.arcLength(cnt, true);
+                let approx = new cv.Mat();
+                cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+                if (approx.rows == 4) {
+                    let area = cv.contourArea(cnt);
+                    if (area > maxArea) {
+                        maxArea = area;
+                        maxContour = approx;
+                    }
+                }
+            }
+
+            // 書類（四隅）が見つかった場合
+            if (maxContour && maxContour.rows == 4) {
+                // 順序を整えて4隅をリスト化
+                let pts = [];
+                for (let i = 0; i < 4; i++) {
+                    pts.push({
+                        x: maxContour.intAt(i, 0),
+                        y: maxContour.intAt(i, 1)
+                    });
+                }
+                // 左上/右上/右下/左下 に並び替える
+                pts.sort((a, b) => a.x + a.y - (b.x + b.y)); // 左上（最小）
+                let leftTop = pts[0];
+                let rightBottom = pts[3];
+                pts.sort((a, b) => a.x - b.x);
+                let leftBottom = pts[1];
+                let rightTop = pts[2];
+
+                // 4隅の順序を整える(左上、右上、右下、左下)
+                let ordered = [leftTop, rightTop, rightBottom, leftBottom];
+
+                // 目標のサイズを決定
+                let widthA = Math.hypot(ordered[2].x - ordered[3].x, ordered[2].y - ordered[3].y);
+                let widthB = Math.hypot(ordered[1].x - ordered[0].x, ordered[1].y - ordered[0].y);
+                let maxWidth = Math.max(widthA, widthB);
+                let heightA = Math.hypot(ordered[1].x - ordered[2].x, ordered[1].y - ordered[2].y);
+                let heightB = Math.hypot(ordered[0].x - ordered[3].x, ordered[0].y - ordered[3].y);
+                let maxHeight = Math.max(heightA, heightB);
+
+                // 透視変換
+                let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+                    ordered[0].x, ordered[0].y,
+                    ordered[1].x, ordered[1].y,
+                    ordered[2].x, ordered[2].y,
+                    ordered[3].x, ordered[3].y
+                ]);
+                let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+                    0, 0,
+                    maxWidth - 1, 0,
+                    maxWidth - 1, maxHeight - 1,
+                    0, maxHeight - 1
+                ]);
+                let M = cv.getPerspectiveTransform(srcTri, dstTri);
+                let warped = new cv.Mat();
+                cv.warpPerspective(src, warped, M, new cv.Size(maxWidth, maxHeight));
+
+                // 結果を表示
+                cv.imshow('canvasOutput', warped);
+
+                // 後片付け
+                src.delete(); dst.delete(); contours.delete(); hierarchy.delete();
+                warped.delete(); srcTri.delete(); dstTri.delete(); M.delete(); maxContour.delete();
+
+            } else {
+                alert('書類が認識できませんでした');
+                src.delete(); dst.delete(); contours.delete(); hierarchy.delete();
+            }
+        }
+    </script>
+</body>
+
+</html>
